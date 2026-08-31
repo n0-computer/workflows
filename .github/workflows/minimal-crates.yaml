@@ -126,7 +126,7 @@ jobs:
           # Pinned: sccache >= 0.17.0 expands rustc @argfiles and breaks Windows'
           # 32K command line limit: https://github.com/mozilla/sccache/issues/2397
           version: "v0.16.0"
-      - uses: ./.github/workflows/sccache-probe
+      - uses: $/.github/workflows/sccache-probe
 
       - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
         with:
