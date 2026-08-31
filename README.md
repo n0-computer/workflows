@@ -1,7 +1,12 @@
 # workflows
 
-Collection of reusable workflows for n0 repos
+Collection of reusable workflows for n0 repos.
 
-Note: this is currently entirely unused.  We might start using this in
-the future.  In the mean time feel free to modify everything without
-any consequences.  Including deleting this repo.
+To re-use a workflow use e.g.:
+
+```yaml
+jobs:
+  min-crates:
+    name: Min Crates
+    uses: "n0-computer/workflows/.github/workflows/minimal-crates.yaml@main"
+```
