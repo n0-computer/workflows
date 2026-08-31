@@ -90,6 +90,14 @@ jobs:
       # local disk on self-hosted, GHA-backed on Blacksmith (ephemeral).
       RUSTC_WRAPPER: "sccache"
     steps:
+      - name: Configure Git Bash
+        shell: pwsh
+        run: |
+          $gitBashDir = "$env:ProgramFiles\Git\bin"
+          if (-not (Test-Path "$gitBashDir\bash.exe")) {
+            throw "Git Bash not found at $gitBashDir\bash.exe"
+          }
+          $gitBashDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Configure sccache backend
         shell: bash
         run: |
