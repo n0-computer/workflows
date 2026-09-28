@@ -87,6 +87,10 @@ jobs:
       # sccache backend is selected at runtime in "Configure sccache backend":
       # local disk on self-hosted, GHA-backed on Blacksmith (ephemeral).
       RUSTC_WRAPPER: "sccache"
+      # We avoid `rustup default` as that would rewrite the default o
+      # the shared self-hosted runner. This only affects steps which
+      # do not explicitly pass `+nightly`.
+      RUSTUP_TOOLCHAIN: "nightly"
     steps:
       - name: Configure Git Bash
         shell: pwsh
@@ -113,9 +117,9 @@ jobs:
 
       - name: Install Rust nightly
         run: |
-          rustup toolchain install nightly
-          rustup target add ${{ matrix.target }}
-          rustup set default-host ${{ matrix.target }}
+          rustup toolchain install nightly --target "${{ matrix.target }}"
+          rustup set default-host "${{ matrix.target }}"
+          rustc --version
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
