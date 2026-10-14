@@ -1,0 +1,33 @@
+name: codespell
+
+on:
+  workflow_call:
+    inputs:
+      ignore-words-list:
+        description: Comma separated words codespell should accept.
+        type: string
+        default: ""
+      skip:
+        description: Comma separated globs codespell should skip.
+        type: string
+        default: "CHANGELOG.md"
+
+permissions:
+  contents: read
+
+env:
+  CODESPELL_VERSION: "2.4.1"
+
+jobs:
+  codespell:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: pip install --user "codespell[toml]==${CODESPELL_VERSION}"
+      - env:
+          IGNORE_WORDS: ${{ inputs.ignore-words-list }}
+          SKIP: ${{ inputs.skip }}
+        run: codespell --ignore-words-list="$IGNORE_WORDS" --skip="$SKIP"
