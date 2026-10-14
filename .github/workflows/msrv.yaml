@@ -1,0 +1,52 @@
+# cargo check on the minimum supported Rust version.
+
+name: MSRV
+
+on:
+  workflow_call:
+    inputs:
+      msrv:
+        description: The minimum supported Rust version, e.g. "1.91".
+        type: string
+        required: true
+      args:
+        description: Arguments for cargo check. Word-split, plain flags only.
+        type: string
+        default: "--workspace --all-targets"
+      runs-on:
+        description: Runner labels as JSON.
+        type: string
+        default: '"ubuntu-latest"'
+
+permissions:
+  contents: read
+
+env:
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  msrv:
+    timeout-minutes: 30
+    name: Minimal Supported Rust Version
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    env:
+      RUSTC_WRAPPER: "sccache"
+      SCCACHE_GHA_ENABLED: "on"
+      MSRV: ${{ inputs.msrv }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ inputs.msrv }}
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        continue-on-error: true
+      - uses: $/.github/workflows/sccache-probe
+      - name: Check MSRV
+        env:
+          ARGS: ${{ inputs.args }}
+        run: |
+          read -ra args <<< "$ARGS"
+          cargo "+$MSRV" check --locked "${args[@]}"

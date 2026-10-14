@@ -1,0 +1,62 @@
+# Checks the docs build. With docs-rs-packages set, runs `cargo docs-rs`
+# per package, the way docs.rs builds them. Otherwise runs `cargo doc`
+# on the whole workspace.
+
+name: Docs
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: Nightly toolchain, e.g. "nightly" or "nightly-2025-10-09".
+        type: string
+        default: nightly
+      docs-rs-packages:
+        description: Space separated packages to build with cargo docs-rs.
+        type: string
+        default: ""
+      rustdocflags:
+        type: string
+        default: "-Dwarnings"
+      runs-on:
+        description: Runner labels as JSON.
+        type: string
+        default: '"ubuntu-latest"'
+
+permissions:
+  contents: read
+
+jobs:
+  check-docs:
+    timeout-minutes: 30
+    name: Checking docs
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    env:
+      RUSTC_WRAPPER: "sccache"
+      SCCACHE_GHA_ENABLED: "on"
+      RUSTDOCFLAGS: ${{ inputs.rustdocflags }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+      - uses: dtolnay/install@982daea0f5d846abc3c83e01a6a1d73c040047c1 # cargo-docs-rs
+        if: inputs.docs-rs-packages != ''
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        continue-on-error: true
+      - uses: $/.github/workflows/sccache-probe
+      - name: cargo docs-rs
+        if: inputs.docs-rs-packages != ''
+        env:
+          PACKAGES: ${{ inputs.docs-rs-packages }}
+        run: |
+          set -euo pipefail
+          for p in $PACKAGES; do
+            cargo docs-rs --locked -p "$p"
+          done
+      - name: cargo doc
+        if: inputs.docs-rs-packages == ''
+        run: cargo doc --locked --workspace --all-features --no-deps --document-private-items

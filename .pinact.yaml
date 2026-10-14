@@ -8,6 +8,11 @@ min_age:
 rules:
   - ignore: true
     conditions:
+      # dtolnay/install tags are tool names, not semver.
+      - expr: |
+          ActionName == "dtolnay/install"
+  - ignore: true
+    conditions:
       # n0-owned, no releases cut.
       - expr: |
           ActionName == "n0-computer/actions-upload-release-asset"
