@@ -1,0 +1,206 @@
+# Builds a Rust binary for linux (musl), macOS and Windows and attaches the
+# archives to a GitHub release, creating the release first if asked.
+#
+# The caller grants contents: write. Uploads go through
+# n0-computer/actions-upload-release-asset because gh is not installed on
+# the self-hosted runners.
+
+name: Release binaries
+
+on:
+  workflow_call:
+    inputs:
+      bin-name:
+        description: The binary (cargo bin target) to build and ship.
+        type: string
+        required: true
+      release-version:
+        description: Release tag. Defaults to the pushed tag.
+        type: string
+        default: ""
+      create-release:
+        description: Create the GitHub release before uploading.
+        type: boolean
+        default: true
+      draft:
+        description: Create the release as a draft.
+        type: boolean
+        default: false
+      upload-artifacts:
+        description: Attach the archives to the release.
+        type: boolean
+        default: true
+      upload-url:
+        description: Upload URL of an existing release, used when create-release is false.
+        type: string
+        default: ""
+      ref:
+        description: Commit to build. Defaults to the triggering ref.
+        type: string
+        default: ""
+      static-musl:
+        description: Link the musl binaries fully statically.
+        type: boolean
+        default: false
+      binary-artifacts:
+        description: |
+          Also upload each unix binary as a workflow artifact named
+          <bin-name>-<os>-<arch>, for follow-up jobs in the caller.
+        type: boolean
+        default: false
+    secrets:
+      build-iroh-services-api-secret:
+        description: Exposed to the build as BUILD_IROH_SERVICES_API_SECRET.
+        required: false
+    outputs:
+      release-version:
+        value: ${{ jobs.create-release.outputs.release-version }}
+      upload-url:
+        value: ${{ jobs.create-release.outputs.upload-url }}
+
+permissions:
+  contents: read
+
+jobs:
+  create-release:
+    permissions:
+      contents: write        # creates the GitHub release
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    outputs:
+      release-version: ${{ steps.version.outputs.version }}
+      upload-url: ${{ inputs.upload-url || steps.release.outputs.upload_url }}
+    steps:
+      - name: Release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.release-version }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-${GITHUB_REF#refs/tags/}}"
+          echo "version is: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub release
+        id: release
+        if: inputs.create-release
+        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: ${{ steps.version.outputs.version }}
+          draft: ${{ inputs.draft }}
+
+  build-release:
+    permissions:
+      contents: write        # uploads the release archives
+    timeout-minutes: 60
+    needs: create-release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-arm-latest
+            os: ubuntu-latest
+            release-os: linux
+            release-arch: aarch64
+            target: linux-aarch64
+            cargo-target: aarch64-unknown-linux-musl
+            runner: [self-hosted, linux, ARM64]
+          - name: ubuntu-latest
+            os: ubuntu-latest
+            release-os: linux
+            release-arch: amd64
+            target: linux-x86_64
+            cargo-target: x86_64-unknown-linux-musl
+            runner: [self-hosted, linux, X64]
+          - name: macOS-latest
+            os: macOS-latest
+            release-os: darwin
+            release-arch: x86_64
+            target: darwin-x86_64
+            cargo-target: x86_64-apple-darwin
+            runner: [self-hosted, macOS, ARM64]
+          - name: macOS-arm-latest
+            os: macOS-latest
+            release-os: darwin
+            release-arch: aarch64
+            target: darwin-aarch64
+            cargo-target: aarch64-apple-darwin
+            runner: [self-hosted, macOS, ARM64]
+          # No org-level Windows runner, so this one is GitHub-hosted.
+          - name: windows-latest
+            os: windows-latest
+            release-os: windows
+            release-arch: amd64
+            target: windows-x86_64
+            cargo-target: x86_64-pc-windows-msvc
+            runner: [windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.cargo-target }}
+      - name: Ensure musl support
+        if: contains(matrix.cargo-target, '-musl')
+        run: sudo apt-get install musl-tools -y
+      - name: Build release binary
+        shell: bash
+        env:
+          MATRIX_NAME: ${{ matrix.name }}
+          CARGO_TARGET: ${{ matrix.cargo-target }}
+          BIN_NAME: ${{ inputs.bin-name }}
+          STATIC_MUSL: ${{ inputs.static-musl }}
+          BUILD_IROH_SERVICES_API_SECRET: ${{ secrets.build-iroh-services-api-secret }}
+        run: |
+          set -euo pipefail
+          if [ "$MATRIX_NAME" = "ubuntu-arm-latest" ]; then
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc
+            export CC=aarch64-linux-gnu-gcc
+          fi
+          if [ "$STATIC_MUSL" = "true" ] && [[ "$CARGO_TARGET" == *-musl ]]; then
+            export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static -C relocation-model=static -C link-arg=-static"
+          fi
+          cargo build --locked --release --bin "$BIN_NAME" --target "$CARGO_TARGET"
+      - name: Build archive
+        shell: bash
+        env:
+          BIN_NAME: ${{ inputs.bin-name }}
+          VERSION: ${{ needs.create-release.outputs.release-version }}
+          TARGET: ${{ matrix.target }}
+          CARGO_TARGET: ${{ matrix.cargo-target }}
+          RELEASE_OS: ${{ matrix.release-os }}
+        run: |
+          set -euo pipefail
+          staging="$BIN_NAME-$VERSION-$TARGET"
+          mkdir -p "$staging"
+          if [ "$RELEASE_OS" = "windows" ]; then
+            cp "target/$CARGO_TARGET/release/$BIN_NAME.exe" "$staging/"
+            (cd "$staging" && 7z a "../$staging.zip" .)
+            echo "ASSET=$staging.zip" >> "$GITHUB_ENV"
+          else
+            cp "target/$CARGO_TARGET/release/$BIN_NAME" "$staging/"
+            tar czf "$staging.tar.gz" -C "$staging" .
+            echo "ASSET=$staging.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - name: Upload release archive
+        if: inputs.upload-artifacts
+        uses: n0-computer/actions-upload-release-asset@2613dacb5369f21a7e14f8eedce32ea9f88bb19f # main
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload-url }}
+          asset_path: ${{ env.ASSET }}
+          overwrite: true
+      - name: Upload binary for the caller
+        if: inputs.binary-artifacts && matrix.release-os != 'windows'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.bin-name }}-${{ matrix.release-os }}-${{ matrix.release-arch }}
+          path: target/${{ matrix.cargo-target }}/release/${{ inputs.bin-name }}
+          retention-days: 1
+          if-no-files-found: error
