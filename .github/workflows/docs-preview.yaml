@@ -1,0 +1,83 @@
+# Builds the docs for a PR, publishes them to the generated-docs-preview
+# branch for GitHub Pages and links them in a PR comment.
+#
+# The caller grants contents: write and pull-requests: write. Skipped for
+# PRs from forks.
+
+name: Docs Preview
+
+on:
+  workflow_call:
+    inputs:
+      crate-dir:
+        description: Directory under target/doc to link, e.g. "iroh_blobs".
+        type: string
+        required: true
+      pr-number:
+        description: PR to preview, for workflow_dispatch callers.
+        type: string
+        default: ""
+      toolchain:
+        type: string
+        default: nightly
+      rustdocflags:
+        type: string
+        default: "--cfg iroh_docsrs"
+
+permissions:
+  contents: read
+
+jobs:
+  preview-docs:
+    permissions:
+      contents: write        # pushes to generated-docs-preview
+      pull-requests: write   # posts the preview comment
+    timeout-minutes: 30
+    name: Docs preview
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: "sccache"
+      SCCACHE_GHA_ENABLED: "on"
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        continue-on-error: true
+      - uses: $/.github/workflows/sccache-probe
+      - name: Generate Docs
+        run: cargo doc --locked --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: ${{ inputs.rustdocflags }}
+      - name: Deploy Docs to Preview Branch
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ github.token }}
+          publish_dir: ./target/doc/
+          destination_dir: pr/${{ env.PR_NUMBER }}/docs
+          publish_branch: generated-docs-preview
+      - name: Find Docs Comment
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        id: fc
+        with:
+          issue-number: ${{ env.PR_NUMBER }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Documentation for this PR has been generated
+      - name: Get current timestamp
+        run: echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+      - name: Create or Update Docs Comment
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ env.PR_NUMBER }}
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          body: |
+            Documentation for this PR has been generated and is available at: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr/${{ env.PR_NUMBER }}/docs/${{ inputs.crate-dir }}/
+
+            Last updated: ${{ env.TIMESTAMP }}
+          edit-mode: replace
