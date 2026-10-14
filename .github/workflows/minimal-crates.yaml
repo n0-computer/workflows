@@ -116,9 +116,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust nightly
+        # bash: pwsh steps ignore a native command's exit status.
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.target }}
         run: |
-          rustup toolchain install nightly --target "${{ matrix.target }}"
-          rustup set default-host "${{ matrix.target }}"
+          rustup toolchain install nightly --target "$RUST_TARGET"
+          rustup set default-host "$RUST_TARGET"
           rustc --version
 
       - name: Install sccache
