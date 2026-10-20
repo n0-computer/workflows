@@ -10,10 +10,11 @@ on:
     inputs:
       windows-runner:
         description: |
-          The runner to use for windows, self-hosted by default.
+          The runner to use for windows, windows-latest by default.
           The string is parsed as JSON.
+          Do not use self-hosted as this does not use min-publish-age.
         type: "string"
-        default: '["self-hosted","windows","x64"]'
+        default: "\"windows-latest\""
   workflow_dispatch:
 
 concurrency:
@@ -23,6 +24,8 @@ concurrency:
 env:
   RUST_BACKTRACE: 1
   SCCACHE_CACHE_SIZE: "10G"
+  RUSTC_WRAPPER: "sccache"
+  SCCACHE_GHA_ENABLED: "true"
 
 # Default to read-only; jobs that need more grant it explicitly.
 permissions:
@@ -58,19 +61,14 @@ jobs:
         with:
           toolchain: nightly
       - name: cargo check
-        # No --locked: re-resolving is the point, so -Z min-publish-age guards
-        # the versions the lockfile has never seen.
         run: |
           rm -f Cargo.lock
-          cargo +nightly check -Z minimal-versions -Z min-publish-age \
-            --config 'registry.global-min-publish-age="3 days"' \
+          cargo +nightly check -Z minimal-versions \
             --workspace --all-features --lib --bins
 
   minimal-crates-windows:
     timeout-minutes: 30
     name: "Minimal Crates (Windows)"
-    # Still self-hosted; moving to windows-latest needs sccache switched to
-    # SCCACHE_GHA_ENABLED. Follow-up.
     runs-on: ${{ fromJSON(inputs.windows-runner) }}
     permissions:
       contents: read
@@ -100,16 +98,6 @@ jobs:
             throw "Git Bash not found at $gitBashDir\bash.exe"
           }
           $gitBashDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: Configure sccache backend
-        shell: bash
-        run: |
-            if [[ "${RUNNER_NAME:-}" == blacksmith-* ]]; then
-              echo "Runner: $RUNNER_NAME → GHA-backed sccache"
-              echo "SCCACHE_GHA_ENABLED=on" >> "$GITHUB_ENV"
-            else
-              echo "Runner: $RUNNER_NAME → local-disk sccache"
-              # leave SCCACHE_GHA_ENABLED unset; sccache defaults to local disk
-            fi
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -153,6 +141,5 @@ jobs:
         # the versions the lockfile has never seen.
         run: |
           rm -Force Cargo.lock
-          cargo +nightly check -Z minimal-versions -Z min-publish-age `
-            --config 'registry.global-min-publish-age="3 days"' `
+          cargo +nightly check -Z minimal-versions `
             --workspace --all-features --lib --bins
