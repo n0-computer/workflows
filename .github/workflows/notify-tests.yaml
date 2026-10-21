@@ -1,0 +1,79 @@
+# Posts a test run's outcome to Discord. Call it from a job that `needs`
+# the tests and runs `if: always()`, passing `needs.<tests>.result`.
+#
+# Beta runs notify on failure only. Flaky runs notify on success too, with
+# the failed tests read from the libtest JSON artifacts the run uploaded.
+
+name: Notify tests
+
+on:
+  workflow_call:
+    inputs:
+      tests-result:
+        description: The result of the tests job, e.g. needs.tests.result.
+        type: string
+        required: true
+      flaky-report:
+        description: Summarize the failed tests from the run's nextest reports.
+        type: boolean
+        default: false
+      title:
+        description: What ran, e.g. "Beta tests" or "Flaky tests".
+        type: string
+        default: "Tests"
+    secrets:
+      webhook-url:
+        description: Discord webhook to post to.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    if: inputs.tests-result == 'failure' || (inputs.flaky-report && inputs.tests-result == 'success')
+    steps:
+      - name: Download nextest reports
+        if: inputs.flaky-report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: libtest_run_${{ github.run_number }}-${{ github.run_attempt }}-*
+          merge-multiple: true
+          path: nextest-results
+      - name: Summarize
+        id: summary
+        env:
+          RESULT: ${{ inputs.tests-result }}
+          FLAKY: ${{ inputs.flaky-report }}
+        run: |
+          set -euo pipefail
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          # Random delimiter for the multiline output.
+          eof="EOF_$(openssl rand -hex 8)"
+          {
+            echo "details<<$eof"
+            if [ "$FLAKY" = "true" ] && [ "$RESULT" = "success" ]; then
+              echo "No flaky failures!"
+            elif [ "$FLAKY" = "true" ]; then
+              echo "Failed tests:"
+              shopt -s nullglob
+              for report in nextest-results/*.json; do
+                name=$(basename "$report" .json | tr _ ' ')
+                echo "- **$name**"
+                # Test names look like "crate::module$test", print them as paths.
+                jq --slurp -r '.[] | select(.type == "test" and .event == "failed") | .name' "$report" \
+                  | sed -e 's/\$/::/'
+              done
+            fi
+            echo "See $run_url"
+            echo "$eof"
+          } >> "$GITHUB_OUTPUT"
+      - name: Notify discord
+        uses: n0-computer/discord-webhook-notify@1399c1b2d57cc05894d506d2cfdc33c5f012b993 # v1.1.1
+        with:
+          text: "${{ inputs.title }} in **${{ github.repository }}**: ${{ inputs.tests-result }}"
+          severity: ${{ inputs.tests-result == 'success' && 'info' || (inputs.flaky-report && 'warn' || 'error') }}
+          details: ${{ steps.summary.outputs.details }}
+          webhookUrl: ${{ secrets.webhook-url }}

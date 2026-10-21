@@ -1,0 +1,34 @@
+# Runs `cargo make format-check` from the caller's Makefile.toml.
+
+name: fmt
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        description: Rust toolchain providing rustfmt.
+        type: string
+        default: stable
+
+permissions:
+  contents: read
+
+jobs:
+  check-fmt:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: rustfmt
+      - uses: taiki-e/install-action@82cd3e7658a6f96c86c0234aeeda1748937cb0a1 # v2.85.13
+        with:
+          tool: cargo-make
+      - run: cargo make format-check
+      - name: Lockfile must not have moved
+        # cargo make takes no --locked. Assert the lockfile instead.
+        run: git diff --exit-code Cargo.lock

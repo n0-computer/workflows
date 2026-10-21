@@ -1,0 +1,64 @@
+# Static analysis of a repo's own workflows: zizmor gates on every finding,
+# pinact fails on a SHA that drifts from its version comment or is younger
+# than the cooldown in the caller's .pinact.yaml.
+#
+# Both tools are fetched as release tarballs and checked against hashes
+# pinned here, not against a checksum file from the same release.
+
+name: Workflow Lint
+
+on:
+  workflow_call:
+  # Lint this repo too.
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  ZIZMOR_VERSION: "1.30.1"
+  ZIZMOR_SHA256: "e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"
+  PINACT_VERSION: "4.1.1"
+  PINACT_SHA256: "d1cffebe5704b74e2e5f8a864efb9f7e54768972dc686188c008033fb1797841"
+
+jobs:
+  zizmor:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install zizmor
+        run: |
+          set -euo pipefail
+          curl -fsSL -o zizmor.tar.gz \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${ZIZMOR_SHA256}  zizmor.tar.gz" | sha256sum -c -
+          tar xzf zizmor.tar.gz zizmor
+          install -m755 zizmor /usr/local/bin/zizmor
+          rm zizmor zizmor.tar.gz
+      # Whole repo, not just workflows/. dependabot config is audited too.
+      - run: zizmor --offline .
+
+  pinact:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinact
+        run: |
+          set -euo pipefail
+          curl -fsSL -o pinact.tar.gz \
+            "https://github.com/suzuki-shunsuke/pinact/releases/download/v${PINACT_VERSION}/pinact_linux_amd64.tar.gz"
+          echo "${PINACT_SHA256}  pinact.tar.gz" | sha256sum -c -
+          tar xzf pinact.tar.gz pinact
+          install -m755 pinact /usr/local/bin/pinact
+          rm pinact pinact.tar.gz
+      - run: pinact run --check --verify-comment --verify-min-age
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

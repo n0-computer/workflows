@@ -1,0 +1,46 @@
+# Prunes old PR docs from the generated-docs-preview branch. The caller
+# grants contents: write.
+
+name: Docs Cleanup
+
+on:
+  workflow_call:
+    inputs:
+      keep:
+        description: How many of the most recent PR previews to keep.
+        type: number
+        default: 25
+
+permissions:
+  contents: read
+
+jobs:
+  clean-docs-branch:
+    permissions:
+      contents: write   # prunes generated-docs-preview
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: generated-docs-preview
+          # Stays on: this job prunes the branch with a bare `git push`.
+          persist-credentials: true
+      - name: Clean docs branch
+        env:
+          KEEP: ${{ inputs.keep }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cd pr/
+          mapfile -t dirs < <(find . -maxdepth 1 -mindepth 1 -type d -regex './[0-9]+' -printf '%f\n' | sort -n)
+          remove=$(( ${#dirs[@]} - KEEP ))
+          if [ "$remove" -gt 0 ]; then
+            rm -rf -- "${dirs[@]:0:$remove}"
+          fi
+          git add -A .
+          git diff --cached --quiet && echo "Nothing to clean up" && exit 0
+          git commit -m "Cleanup old docs"
+          git push
