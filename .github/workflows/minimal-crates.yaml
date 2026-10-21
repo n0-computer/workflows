@@ -14,7 +14,7 @@ on:
           The string is parsed as JSON.
           Do not use self-hosted as this does not use min-publish-age.
         type: "string"
-        default: "\"windows-latest\""
+        default: '"windows-latest"'
   workflow_dispatch:
 
 concurrency:
