@@ -23,7 +23,6 @@ concurrency:
 
 env:
   RUST_BACKTRACE: 1
-  SCCACHE_CACHE_SIZE: "10G"
   RUSTC_WRAPPER: "sccache"
   SCCACHE_GHA_ENABLED: "true"
 
