@@ -57,7 +57,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly
       - name: cargo check
@@ -118,7 +118,7 @@ jobs:
           version: "v0.16.0"
       - uses: $/.github/workflows/sccache-probe
 
-      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
         with:
           # Blacksmith's Windows image ships no pre-installed MSYS2 (C:\msys64),
           # so install it there. Self-hosted keeps the pre-installed one (faster).
