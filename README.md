@@ -26,11 +26,9 @@ jobs:
     pass.
   - Merge the shared workflow branch to `main` in this repo.
   - Tag the new commit on `main` in this repo, use the next suitable
-    semver version.
-  - Push the tag to this repo, e.g. `v1.2.3`.
-- Update the calling workflow to refer to the tag by hash, and use the
-  tag name in a comment. e.g.:
-  `users: n0-computer/workflows/.github/workflow/the_workflow.yaml@abc12..89def # v1.2.3`
+    semver version. E.g. `v1.2.3`
+  - Move the main version tag, e.g. `v1`.
+  - Push the tags to this repo.
+- Update the calling workflow to refer to the tag again:
+  `users: n0-computer/workflows/.github/workflow/the_workflow.yaml@v1`
 - Merge the calling workflow into its repo's main branch.
-- All other repos using the same shared workflow will get updated
-  automatically by pinact at some point.
