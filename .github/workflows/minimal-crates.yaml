@@ -8,13 +8,17 @@ name: Min Crates
 on:
   workflow_call:
     inputs:
-      windows-runner:
+      crate-selection:
         description: |
-          The runner to use for windows, windows-latest by default.
-          The string is parsed as JSON.
-          Do not use self-hosted as this does not use min-publish-age.
+          Cargo arguments to select the crates to test.
         type: "string"
-        default: '"windows-latest"'
+        default: "--workspace --all-features --lib --bins"
+      fips:
+        description: |
+          Whether to install build dependencies for building the FIPS
+          crypto backend of rustls.
+        type: "boolean"
+        default: false
   workflow_dispatch:
 
 concurrency:
@@ -46,30 +50,39 @@ jobs:
             os: ubuntu-latest
             release-os: linux
             release-arch: amd64
-            runner: ubuntu-latest
+            runner: "blacksmith-8vcpu-ubuntu-2404"
           - name: macOS-arm-latest
             os: macOS-latest
             release-os: darwin
             release-arch: aarch64
-            runner: macos-latest
+            runner: "blacksmith-6vcpu-macos-26"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        continue-on-error: true
+      - uses: $/.github/workflows/sccache-probe
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: nightly
+      - name: Install Go (required for aws-lc-rs FIPS)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: ${{ inputs.fips }}
+        with:
+          go-version: "stable"
+          cache: false
       - name: cargo check
+        env:
+          CRATE_SELECTION: ${{ inputs.crate-selection }}
         run: |
           rm -f Cargo.lock
-          cargo +nightly check -Z minimal-versions \
-            --workspace --all-features --lib --bins
+          cargo +nightly check -Z minimal-versions ${CRATE_SELECTION}
 
   minimal-crates-windows:
     timeout-minutes: 30
     name: "Minimal Crates (Windows)"
-    runs-on: ${{ fromJSON(inputs.windows-runner) }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     strategy:
@@ -81,10 +94,8 @@ jobs:
         include:
           - name: windows-latest
             os: windows
+            runner: blacksmith-8vcpu-windows-2025
     env:
-      # sccache backend is selected at runtime in "Configure sccache backend":
-      # local disk on self-hosted, GHA-backed on Blacksmith (ephemeral).
-      RUSTC_WRAPPER: "sccache"
       # We avoid `rustup default` as that would rewrite the default o
       # the shared self-hosted runner. This only affects steps which
       # do not explicitly pass `+nightly`.
@@ -112,18 +123,17 @@ jobs:
       - name: Install sccache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         continue-on-error: true
-        with:
-          # Pinned: sccache >= 0.17.0 expands rustc @argfiles and breaks Windows'
-          # 32K command line limit: https://github.com/mozilla/sccache/issues/2397
-          version: "v0.16.0"
       - uses: $/.github/workflows/sccache-probe
 
       - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
         with:
-          # Blacksmith's Windows image ships no pre-installed MSYS2 (C:\msys64),
-          # so install it there. Self-hosted keeps the pre-installed one (faster).
-          release: ${{ startsWith(runner.name, 'blacksmith-') }}
-
+          # Blacksmith's Windows image ships no pre-installed MSYS2 (C:\msys64).
+          release: true
+      # - name: Install Go (required for aws-lc-rs FIPS)
+      #   uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      #   with:
+      #     go-version: "stable"
+      #     cache: false
       - name: Install aws-lc-sys build dependencies
         shell: powershell
         run: |
@@ -131,15 +141,14 @@ jobs:
           if (!(Test-Path $chocoPath)) {
             $chocoPath = "$Env:SystemDrive\ProgramData\chocolatey\bin\choco.exe"
           }
-          & $chocoPath install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-          & $chocoPath install nasm -y
+          & $chocoPath install --no-progress cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+          & $chocoPath install --no-progress nasm -y
           echo "C:\Program Files\CMake\bin" | Out-File -FilePath $Env:GITHUB_PATH -Encoding utf8 -Append
           echo "C:\Program Files\NASM" | Out-File -FilePath $Env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: cargo check
-        # No --locked: re-resolving is the point, so -Z min-publish-age guards
-        # the versions the lockfile has never seen.
+        env:
+          CRATE_SELECTION: ${{ inputs.crate-selection }}
         run: |
           rm -Force Cargo.lock
-          cargo +nightly check -Z minimal-versions `
-            --workspace --all-features --lib --bins
+          cargo +nightly check -Z minimal-versions ${ CRATE_SELECTION }
