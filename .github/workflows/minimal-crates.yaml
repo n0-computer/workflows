@@ -17,7 +17,7 @@ on:
         description: |
           Whether to install build dependencies for building the FIPS
           crypto backend of rustls.
-        type: "bool"
+        type: "boolean"
         default: false
   workflow_dispatch:
 
