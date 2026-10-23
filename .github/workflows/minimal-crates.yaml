@@ -73,9 +73,11 @@ jobs:
           go-version: "stable"
           cache: false
       - name: cargo check
+        env:
+          CRATE_SELECTION: ${{ inputs.crate-selection }}
         run: |
           rm -f Cargo.lock
-          cargo +nightly check -Z minimal-versions ${{ inputs.crate-selection }}
+          cargo +nightly check -Z minimal-versions ${CRATE_SELECTION}
 
   minimal-crates-windows:
     timeout-minutes: 30
@@ -145,8 +147,8 @@ jobs:
           echo "C:\Program Files\NASM" | Out-File -FilePath $Env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: cargo check
-        # No --locked: re-resolving is the point, so -Z min-publish-age guards
-        # the versions the lockfile has never seen.
+        env:
+          CRATE_SELECTION: ${{ inputs.crate-selection }}
         run: |
           rm -Force Cargo.lock
-          cargo +nightly check -Z minimal-versions ${{ inputs.crate-selection }}
+          cargo +nightly check -Z minimal-versions ${ CRATE_SELECTION }
