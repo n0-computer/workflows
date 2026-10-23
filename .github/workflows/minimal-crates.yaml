@@ -7,14 +7,6 @@ name: Min Crates
 
 on:
   workflow_call:
-    inputs:
-      windows-runner:
-        description: |
-          The runner to use for windows, windows-latest by default.
-          The string is parsed as JSON.
-          Do not use self-hosted as this does not use min-publish-age.
-        type: "string"
-        default: '"windows-latest"'
   workflow_dispatch:
 
 concurrency:
@@ -46,12 +38,12 @@ jobs:
             os: ubuntu-latest
             release-os: linux
             release-arch: amd64
-            runner: ubuntu-latest
+            runner: "blacksmith-8vcpu-ubuntu-2404"
           - name: macOS-arm-latest
             os: macOS-latest
             release-os: darwin
             release-arch: aarch64
-            runner: macos-latest
+            runner: "blacksmith-6vcpu-macos-26"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,7 +61,7 @@ jobs:
   minimal-crates-windows:
     timeout-minutes: 30
     name: "Minimal Crates (Windows)"
-    runs-on: ${{ fromJSON(inputs.windows-runner) }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     strategy:
@@ -81,6 +73,7 @@ jobs:
         include:
           - name: windows-latest
             os: windows
+            runner: blacksmith-8vcpu-windows-2025
     env:
       # sccache backend is selected at runtime in "Configure sccache backend":
       # local disk on self-hosted, GHA-backed on Blacksmith (ephemeral).
