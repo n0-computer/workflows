@@ -9,7 +9,7 @@ on:
   workflow_call:
     inputs:
       crate-selection:
-        descripion: |
+        description: |
           Cargo arguments to select the crates to test.
         type: "string"
         default: "--workspace --all-features --lib --bins"
