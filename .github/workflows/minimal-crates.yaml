@@ -129,11 +129,6 @@ jobs:
         with:
           # Blacksmith's Windows image ships no pre-installed MSYS2 (C:\msys64).
           release: true
-      # - name: Install Go (required for aws-lc-rs FIPS)
-      #   uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-      #   with:
-      #     go-version: "stable"
-      #     cache: false
       - name: Install aws-lc-sys build dependencies
         shell: powershell
         run: |
