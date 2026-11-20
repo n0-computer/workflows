@@ -144,6 +144,11 @@ jobs:
       - name: cargo check
         env:
           CRATE_SELECTION: ${{ inputs.crate-selection }}
+          # Nightly cargo passes one `-L` path per dependency, so a long target dir
+          # makes rustc's command line long. Setting the CARGO_TARGET_DIR to the
+          # runner's temp directory attempts to mitigate Windows os error 206 failures
+          # (32,767 character command line limit) by shortening the target dir.
+          CARGO_TARGET_DIR: ${{ runner.temp }}\target
         run: |
           rm -Force Cargo.lock
           cargo +nightly check -Z minimal-versions ${ CRATE_SELECTION }
