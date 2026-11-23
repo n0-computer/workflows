@@ -1,0 +1,101 @@
+# Check for cargo-deny advisories.
+#
+# This workflow should be called twice:
+#
+# - Once from a workflow that runs on every PR but only if
+#   dependencies are changed. This check can not be made required as
+#   it will trigger if no dependencies are changed e.g.:
+#
+#      name: Cargo Deny Advisories
+#
+#      on:
+#        pull_request:
+#          paths:
+#            - "**/Cargo.toml"
+#            - "**/Cargo.lock"
+#            - "**/deny.toml"
+#        push:
+#          branches: [main]
+#          paths:
+#            - "**/Cargo.toml"
+#            - "**/Cargo.lock"
+#            - "**/deny.toml"
+#
+#      permissions:
+#        contents: read
+#
+#      jobs:
+#        cargo-deny-advisories:
+#          name: Cargo Deny Advisories
+#          uses: "n0-computer/workflows/.github/workflows/cargo-deny-advisories.yaml@tag"
+#
+# And once from a daily workflow that reports to discord, e.g.:
+#
+#   on:
+#     schedule:
+#       - cron: "0 2 * * *"
+#     workflow_dispatch:
+#
+#   permissions:
+#     contents: read
+#
+#   jobs:
+#     cargo-deny-advisories:
+#       name: Cargo Deny Advisories
+#       uses: "n0-computer/workflows/.github/workflows/cargo-deny-advisories.yaml@tag"
+#       secrets:
+#         DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL: ${{ secrets.DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL }}
+
+name: Cargo Deny Advisories
+
+on:
+  workflow_call:
+    secrets:
+      DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL:
+        description: |
+          Discord webhook to report failures to, if present.
+        required: false
+
+concurrency:
+  group: cargo-deny-advisories-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    timeout-minutes: 30
+    name: cargo deny advisories
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: "--workspace --all-features"
+          command: check advisories
+          command-arguments: "-Dwarnings"
+
+  notify:
+    timeout-minutes: 10
+    needs: advisories
+    if: ${{ always() && needs.advisories.result == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL }}
+    steps:
+      - name: Notify discord on failure
+        if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
+        uses: n0-computer/discord-webhook-notify@1399c1b2d57cc05894d506d2cfdc33c5f012b993 # v1.1.1
+        with:
+          severity: error
+          text: "cargo deny advisories in **${{ github.repository }}**:"
+          details: |
+            cargo deny found advisories for dependencies
+            See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          webhookUrl: ${{ env.DISCORD_WEBHOOK_URL }}
