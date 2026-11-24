@@ -8,7 +8,7 @@
 #
 # - Once from a daily workflow that reports to discord.
 
-name: Cargo Deny Advisories
+name: Cargo Deny
 
 on:
   workflow_call:
