@@ -1,44 +1,37 @@
-# Run cargo-deny on pull requests.
+# Check for cargo-deny advisories.
 #
-# This workflow is meant to run on every PR.  New advisories do not
-# fail the job, cargo-deny-advisories.yaml is used to check those when
-# dependencies change and periodically.
+# This workflow is intended to be called twice:
 #
-# Usage, re-using triggers from the calling workflow:
+# - Once from a workflow that runs on every PR, but only if there are
+#   changes in Cargo.toml, Cargo.lock or deny.toml. Use the
+#   on.pull_request.paths selector to skip the workflow otherwise.
 #
-#   jobs:
-#     cargo-deny:
-#       name: Cargo Deny
-#       uses: "n0-computer/workflows/.github/workflows/cargo-deny.yaml@tag"
+# - Once from a daily workflow that reports to discord.
 
-name: Cargo Deny
+name: Cargo Deny Advisories
 
 on:
   workflow_call:
+    secrets:
+      DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL:
+        description: |
+          Discord webhook to report failures to, if present.
+        required: false
 
 concurrency:
   group: cargo-deny-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Default to read-only; jobs that need more grant it explicitly.
 permissions:
   contents: read
 
 jobs:
-  cargo-deny:
+  deny:
     timeout-minutes: 30
     name: cargo deny
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        checks:
-          - advisories
-          - bans licenses sources
-    # Prevent sudden announcement of a new advisory from failing CI.
-    continue-on-error: ${{ matrix.checks == 'advisories' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,5 +39,25 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           arguments: "--workspace --all-features"
-          command: check ${{ matrix.checks }}
+          command: check
           command-arguments: "-Dwarnings"
+
+  notify:
+    timeout-minutes: 10
+    needs: deny
+    if: ${{ always() && needs.deny.result == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL }}
+    steps:
+      - name: Notify discord on failure
+        if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
+        uses: n0-computer/discord-webhook-notify@1399c1b2d57cc05894d506d2cfdc33c5f012b993 # v1.1.1
+        with:
+          severity: error
+          text: "cargo deny failure in **${{ github.repository }}**:"
+          details: |
+            cargo deny found problems for dependencies.
+            See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          webhookUrl: ${{ env.DISCORD_WEBHOOK_URL }}
