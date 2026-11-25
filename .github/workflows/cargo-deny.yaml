@@ -2,9 +2,11 @@
 #
 # This workflow is intended to be called twice:
 #
-# - Once from a workflow that runs on every PR, but only if there are
-#   changes in Cargo.toml, Cargo.lock or deny.toml. Use the
-#   on.pull_request.paths selector to skip the workflow otherwise.
+# - Once from a workflow that runs on every PR. On pull_request
+#   events cargo-deny only runs if the PR changes a Cargo.toml,
+#   Cargo.lock or deny.toml file, otherwise the jobs are skipped. This
+#   lets the check be marked as required. Set the always-run input to
+#   disable this and always run cargo-deny.
 #
 # - Once from a daily workflow that reports to discord.
 
@@ -12,6 +14,14 @@ name: Cargo Deny
 
 on:
   workflow_call:
+    inputs:
+      always-run:
+        description: |
+          Always run cargo-deny, even on pull requests which do not
+          change any Cargo.toml, Cargo.lock or deny.toml files.
+        type: "boolean"
+        required: false
+        default: false
     secrets:
       DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL:
         description: |
@@ -26,9 +36,47 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    timeout-minutes: 10
+    name: check for dependency changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      # The PR merge commit's first parent is the base branch, so a
+      # depth of 2 is enough to diff the PR's changes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ github.event_name == 'pull_request' && !inputs.always-run }}
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check for changed dependency files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ALWAYS_RUN: ${{ inputs.always-run }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$ALWAYS_RUN" = "true" ]; then
+            echo "Not filtering on changed files"
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if grep -E '(^|/)(Cargo\.toml|Cargo\.lock|deny\.toml)$' <<< "$changed"; then
+            echo "Dependency files changed"
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No dependency files changed, skipping cargo-deny"
+            echo "deps=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deny:
     timeout-minutes: 30
     name: cargo deny
+    needs: changes
+    if: ${{ needs.changes.outputs.deps == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
