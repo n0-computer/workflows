@@ -1,0 +1,108 @@
+# Check for cargo-deny advisories.
+#
+# This workflow is intended to be called twice:
+#
+# - Once from a workflow that runs on every PR. Should only checks if
+#   dependencies or deny config has changed.
+#
+# - Once from a daily workflow that reports to discord. Should use the
+#   `force` option to always run the checks.
+
+name: Cargo Deny
+
+on:
+  workflow_call:
+    inputs:
+      force:
+        description: |
+          Always run cargo-deny, even on PRs with no deps or deny changes.
+        type: "boolean"
+        required: false
+        default: false
+    secrets:
+      DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL:
+        description: |
+          Discord webhook to report failures to, if present.
+        required: false
+
+concurrency:
+  group: cargo-deny-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    timeout-minutes: 10
+    name: check for dependency changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      # The PR merge commit's first parent is the base branch, so a
+      # depth of 2 is enough to diff the PR's changes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ github.event_name == 'pull_request' && !inputs.force }}
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Check for changed dependency files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ALWAYS_RUN: ${{ inputs.force }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$ALWAYS_RUN" = "true" ]; then
+            echo "Not filtering on changed files"
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          if grep -E '(^|/)(Cargo\.toml|Cargo\.lock|deny\.toml)$' <<< "$changed"; then
+            echo "Dependency files changed"
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No dependency files changed, skipping cargo-deny"
+            echo "deps=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deny:
+    timeout-minutes: 30
+    name: cargo deny
+    needs: changes
+    if: ${{ needs.changes.outputs.deps == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: "--workspace --all-features"
+          command: check
+          command-arguments: "-Dwarnings"
+
+  notify:
+    timeout-minutes: 10
+    needs: deny
+    if: ${{ always() && needs.deny.result == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_N0_GITHUB_CHANNEL_WEBHOOK_URL }}
+    steps:
+      - name: Notify discord on failure
+        if: ${{ env.DISCORD_WEBHOOK_URL != '' }}
+        uses: n0-computer/discord-webhook-notify@1399c1b2d57cc05894d506d2cfdc33c5f012b993 # v1.1.1
+        with:
+          severity: error
+          text: "cargo deny failure in **${{ github.repository }}**:"
+          details: |
+            cargo deny found problems for dependencies.
+            See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          webhookUrl: ${{ env.DISCORD_WEBHOOK_URL }}
