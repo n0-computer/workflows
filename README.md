@@ -13,6 +13,21 @@ jobs:
     uses: "n0-computer/workflows/.github/workflows/minimal-crates.yaml@main"
 ```
 
+### Private git dependencies
+
+Every shared workflow takes an optional `GIT_TOKEN` secret. All its
+jobs fetch git dependencies from github.com with it, so a caller can
+depend on a private repository:
+
+```yaml
+    secrets:
+      GIT_TOKEN: ${{ secrets.MY_PRIVATE_REPO_TOKEN }}
+```
+
+A fine-grained token with read-only Contents access to the private
+repository is enough. A new shared workflow must take the secret too:
+copy its `secrets` and `env` entries from `minimal-crates.yaml`.
+
 ### Editing a shared workflow
 
 - Start editing a shared workflow in a branch, e.g. `username/branch_name`.
