@@ -13,6 +13,33 @@ jobs:
     uses: "n0-computer/workflows/.github/workflows/minimal-crates.yaml@main"
 ```
 
+### Private git dependencies
+
+A caller can depend on a private GitHub repository, for example
+through `[patch.crates-io]`. To fetch it, pass a token that can read
+that repository and name the repository:
+
+```yaml
+jobs:
+  min-crates:
+    name: Min Crates
+    uses: "n0-computer/workflows/.github/workflows/minimal-crates.yaml@v2"
+    secrets:
+      GIT_TOKEN: ${{ secrets.MY_PRIVATE_REPO_TOKEN }}
+    with:
+      git-token-repo: "n0-computer/my-private-repo"
+```
+
+A fine-grained token with read-only Contents access to that repository
+is enough. Git uses the token only for URLs that start with
+`https://github.com/<git-token-repo>`. Without both values, nothing
+changes.
+
+Every shared workflow that runs cargo accepts the optional
+`GIT_TOKEN` secret and the `git-token-repo` input. A new shared
+workflow must accept them too: copy the `secrets`, `inputs` and `env`
+entries from `minimal-crates.yaml`.
+
 ### Editing a shared workflow
 
 - Start editing a shared workflow in a branch, e.g. `username/branch_name`.

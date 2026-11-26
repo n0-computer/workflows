@@ -19,6 +19,19 @@ on:
           crypto backend of rustls.
         type: "boolean"
         default: false
+      git-token-repo:
+        description: |
+          The private GitHub repository, as `owner/name`, that a git
+          dependency comes from. Cargo fetches it with `GIT_TOKEN`.
+        type: "string"
+        default: ""
+    secrets:
+      GIT_TOKEN:
+        description: |
+          Token that can read `git-token-repo`, for example a fine-grained
+          token with read-only Contents access. It is used only when
+          `git-token-repo` is set.
+        required: false
   workflow_dispatch:
 
 concurrency:
@@ -26,6 +39,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # With GIT_TOKEN and git-token-repo, git rewrites
+  # https://github.com/<git-token-repo> to carry the token. Cargo uses the
+  # git CLI so that the rewrite applies. Other URLs stay unchanged.
+  CARGO_NET_GIT_FETCH_WITH_CLI: ${{ secrets.GIT_TOKEN != '' && inputs.git-token-repo != '' }}
+  GIT_CONFIG_COUNT: ${{ secrets.GIT_TOKEN != '' && inputs.git-token-repo != '' && '1' || '0' }}
+  GIT_CONFIG_KEY_0: ${{ format('url.https://x-access-token:{0}@github.com/{1}.insteadOf', secrets.GIT_TOKEN, inputs.git-token-repo) }}
+  GIT_CONFIG_VALUE_0: ${{ format('https://github.com/{0}', inputs.git-token-repo) }}
   RUST_BACKTRACE: 1
   RUSTC_WRAPPER: "sccache"
   SCCACHE_GHA_ENABLED: "true"
