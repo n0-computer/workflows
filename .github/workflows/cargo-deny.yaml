@@ -15,10 +15,9 @@ name: Cargo Deny
 on:
   workflow_call:
     inputs:
-      always-run:
+      force:
         description: |
-          Always run cargo-deny, even on pull requests which do not
-          change any Cargo.toml, Cargo.lock or deny.toml files.
+          Always run cargo-deny, even on PRs with no deps or deny changes.
         type: "boolean"
         required: false
         default: false
