@@ -2,13 +2,11 @@
 #
 # This workflow is intended to be called twice:
 #
-# - Once from a workflow that runs on every PR. On pull_request
-#   events cargo-deny only runs if the PR changes a Cargo.toml,
-#   Cargo.lock or deny.toml file, otherwise the jobs are skipped. This
-#   lets the check be marked as required. Set the always-run input to
-#   disable this and always run cargo-deny.
+# - Once from a workflow that runs on every PR. Should only checks if
+#   dependencies or deny config has changed.
 #
-# - Once from a daily workflow that reports to discord.
+# - Once from a daily workflow that reports to discord. Should use the
+#   `force` option to always run the checks.
 
 name: Cargo Deny
 
@@ -47,7 +45,7 @@ jobs:
       # The PR merge commit's first parent is the base branch, so a
       # depth of 2 is enough to diff the PR's changes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ github.event_name == 'pull_request' && !inputs.always-run }}
+        if: ${{ github.event_name == 'pull_request' && !inputs.force }}
         with:
           persist-credentials: false
           fetch-depth: 2
@@ -55,7 +53,7 @@ jobs:
         id: filter
         env:
           EVENT_NAME: ${{ github.event_name }}
-          ALWAYS_RUN: ${{ inputs.always-run }}
+          ALWAYS_RUN: ${{ inputs.force }}
         run: |
           if [ "$EVENT_NAME" != "pull_request" ] || [ "$ALWAYS_RUN" = "true" ]; then
             echo "Not filtering on changed files"
