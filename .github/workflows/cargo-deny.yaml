@@ -2,11 +2,11 @@
 #
 # This workflow is intended to be called twice:
 #
-# - Once from a workflow that runs on every PR. Should only checks if
-#   dependencies or deny config has changed.
+# - Once from a workflow that runs on every PR. Should only run checks
+#   if dependencies or deny config has changed so can be made required.
 #
 # - Once from a daily workflow that reports to discord. Should use the
-#   `force` option to always run the checks.
+#   `force` option to always run the checks and notify to discord.
 
 name: Cargo Deny
 
@@ -33,19 +33,16 @@ permissions:
   contents: read
 
 jobs:
-  changes:
-    timeout-minutes: 10
-    name: check for dependency changes
+  deny:
+    timeout-minutes: 30
+    name: cargo deny
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      deps: ${{ steps.filter.outputs.deps }}
     steps:
       # The PR merge commit's first parent is the base branch, so a
       # depth of 2 is enough to diff the PR's changes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ github.event_name == 'pull_request' && !inputs.force }}
         with:
           persist-credentials: false
           fetch-depth: 2
@@ -53,35 +50,24 @@ jobs:
         id: filter
         env:
           EVENT_NAME: ${{ github.event_name }}
-          ALWAYS_RUN: ${{ inputs.force }}
+          FORCE: ${{ inputs.force }}
         run: |
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$ALWAYS_RUN" = "true" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$FORCE = "true" ]; then
             echo "Not filtering on changed files"
-            echo "deps=true" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed=$(git diff --name-only HEAD^1 HEAD)
           if grep -E '(^|/)(Cargo\.toml|Cargo\.lock|deny\.toml)$' <<< "$changed"; then
             echo "Dependency files changed"
-            echo "deps=true" >> "$GITHUB_OUTPUT"
+            echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "No dependency files changed, skipping cargo-deny"
-            echo "deps=false" >> "$GITHUB_OUTPUT"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No dependency or deny config changes, cargo-deny not run." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  deny:
-    timeout-minutes: 30
-    name: cargo deny
-    needs: changes
-    if: ${{ needs.changes.outputs.deps == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        if: ${{ steps.filter.outputs.run == 'true' }}
         with:
           arguments: "--workspace --all-features"
           command: check
