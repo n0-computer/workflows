@@ -52,7 +52,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           FORCE: ${{ inputs.force }}
         run: |
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$FORCE = "true" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$FORCE" = "true" ]; then
             echo "Not filtering on changed files"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
